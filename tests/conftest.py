@@ -29,6 +29,18 @@ VLLM_REPO_ROOT = _resolve_vllm_repo_root()
 if str(VLLM_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(VLLM_REPO_ROOT))
 
+_tests_spec = importlib.util.spec_from_file_location(
+    "tests",
+    VLLM_REPO_ROOT / "tests" / "__init__.py",
+    submodule_search_locations=[str(VLLM_REPO_ROOT / "tests")],
+)
+if _tests_spec is None or _tests_spec.loader is None:
+    raise RuntimeError("Failed to load the upstream vLLM tests package.")
+
+_tests_module = importlib.util.module_from_spec(_tests_spec)
+sys.modules["tests"] = _tests_module
+_tests_spec.loader.exec_module(_tests_module)
+
 _spec = importlib.util.spec_from_file_location(
     "_vllm_repo_tests_conftest",
     VLLM_REPO_ROOT / "tests" / "conftest.py",

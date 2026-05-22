@@ -18,12 +18,14 @@ from vllm.model_executor.layers.linear import (
     LinearBase,
     LinearMethodBase,
     UnquantizedLinearMethod,
+    register_weight_loader_v2_supported_method,
     set_weight_attrs,
 )
 from vllm.model_executor.layers.quantization import (
     QuantizationConfig,
     QuantizationMethods,
 )
+from vllm.model_executor.parameter import ModelWeightParameter, PackedvLLMParameter
 from vllm.platforms import current_platform
 from vllm.utils.torch_utils import direct_register_custom_op
 
@@ -237,6 +239,75 @@ def calculate_quant_ratio(dtype):
         return torch.iinfo(dtype).bits // torch.iinfo(torch.uint8).bits
 
 
+class BitsAndBytes8bitParameter(ModelWeightParameter):
+    """BNB 8-bit parameters loaded through vLLM's weight_loader_v2 API."""
+
+    def load_column_parallel_weight(self, loaded_weight: torch.Tensor):
+        self._assert_and_load(loaded_weight)
+
+    def load_row_parallel_weight(self, loaded_weight: torch.Tensor):
+        self._assert_and_load(loaded_weight)
+
+    def load_merged_column_weight(self, loaded_weight: torch.Tensor, **kwargs):
+        shard_offset = kwargs["shard_offset"]
+        shard_size = kwargs["shard_size"]
+
+        param_data = self.data.narrow(self.output_dim, shard_offset, shard_size)
+        assert param_data.shape == loaded_weight.shape
+        param_data.copy_(loaded_weight)
+
+    def load_qkv_weight(self, loaded_weight: torch.Tensor, **kwargs):
+        shard_offset = kwargs["shard_offset"]
+        shard_size = kwargs["shard_size"]
+
+        param_data = self.data.narrow(self.output_dim, shard_offset, shard_size)
+        assert param_data.shape == loaded_weight.shape
+        param_data.copy_(loaded_weight)
+
+
+class BitsAndBytes4bitParameter(PackedvLLMParameter):
+    """BNB 4-bit packed parameters loaded through vLLM's weight_loader_v2 API."""
+
+    def __init__(self, logical_width: int, **kwargs):
+        self.logical_width = logical_width
+        super().__init__(**kwargs)
+
+    def adjust_shard_indexes_for_packing(self, shard_size, shard_offset):
+        quantized_total = self.data.shape[self.packed_dim]
+        quantized_offset = shard_offset * quantized_total // self.logical_width
+        quantized_size = shard_size * quantized_total // self.logical_width
+        return quantized_size, quantized_offset
+
+    def load_column_parallel_weight(self, loaded_weight: torch.Tensor):
+        self._assert_and_load(loaded_weight)
+
+    def load_row_parallel_weight(self, loaded_weight: torch.Tensor):
+        self._assert_and_load(loaded_weight)
+
+    def load_merged_column_weight(self, loaded_weight: torch.Tensor, **kwargs):
+        shard_offset = kwargs["shard_offset"]
+        shard_size = kwargs["shard_size"]
+
+        shard_size, shard_offset = self.adjust_shard_indexes_for_packing(
+            shard_size=shard_size, shard_offset=shard_offset
+        )
+        param_data = self.data.narrow(self.output_dim, shard_offset, shard_size)
+        assert param_data.shape == loaded_weight.shape
+        param_data.copy_(loaded_weight)
+
+    def load_qkv_weight(self, loaded_weight: torch.Tensor, **kwargs):
+        shard_offset = kwargs["shard_offset"]
+        shard_size = kwargs["shard_size"]
+
+        shard_size, shard_offset = self.adjust_shard_indexes_for_packing(
+            shard_size=shard_size, shard_offset=shard_offset
+        )
+        param_data = self.data.narrow(self.output_dim, shard_offset, shard_size)
+        assert param_data.shape == loaded_weight.shape
+        param_data.copy_(loaded_weight)
+
+
+@register_weight_loader_v2_supported_method
 class BitsAndBytesLinearMethod(LinearMethodBase):
     """Linear method for BitsAndBytes.
 
@@ -258,23 +329,20 @@ class BitsAndBytesLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
-        from bitsandbytes.nn import Int8Params
-
         def create_qweight_for_8bit():
-            qweight = Int8Params(
+            qweight = BitsAndBytes8bitParameter(
                 data=torch.empty(
                     sum(output_partition_sizes),
                     input_size_per_partition,
                     dtype=torch.int8,
                 ),
-                has_fp16_weights=self.quant_config.llm_int8_has_fp16_weight,
-                requires_grad=False,
+                input_dim=0,
+                output_dim=0,
+                weight_loader=extra_weight_attrs["weight_loader"],
             )
             set_weight_attrs(
                 qweight,
                 {
-                    "input_dim": 0,
-                    "output_dim": 0,
                     "pack_factor": 1,
                     "generation": 0,
                 },
@@ -290,18 +358,19 @@ class BitsAndBytesLinearMethod(LinearMethodBase):
                     "The input size is not aligned with the quantized weight shape."
                 )
 
-            qweight = torch.nn.Parameter(
-                torch.empty(total_size // quant_ratio, 1, dtype=torch.uint8),
-                requires_grad=False,
+            qweight = BitsAndBytes4bitParameter(
+                data=torch.empty(total_size // quant_ratio, 1, dtype=torch.uint8),
+                input_dim=0,
+                output_dim=0,
+                packed_factor=quant_ratio,
+                packed_dim=0,
+                logical_width=sum(output_partition_sizes),
+                weight_loader=extra_weight_attrs["weight_loader"],
             )
             set_weight_attrs(
                 qweight,
                 {
-                    "input_dim": 0,
-                    "output_dim": 0,
                     "pack_factor": quant_ratio,
-                    "is_sharded_weight": True,
-                    "shard_indexer": _adjust_bitsandbytes_4bit_shard,
                 },
             )
             return qweight
@@ -313,6 +382,9 @@ class BitsAndBytesLinearMethod(LinearMethodBase):
         # Enable parameters to have the same name as in the BNB
         # checkpoint format.
         layer.register_parameter("weight", qweight)
+        extra_weight_attrs = {
+            key: value for key, value in extra_weight_attrs.items() if key != "weight_loader"
+        }
         set_weight_attrs(qweight, extra_weight_attrs)
 
     def apply(
