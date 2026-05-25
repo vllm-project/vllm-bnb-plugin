@@ -8,7 +8,7 @@ from transformers import BitsAndBytesConfig
 from transformers import __version__ as TRANSFORMERS_VERSION
 
 from tests.quantization.utils import is_quant_method_supported
-from tests.utils import compare_two_settings, multi_gpu_test
+from tests.vllm_test_utils import multi_gpu_test
 from tests.models.utils import check_embeddings_close, check_logprobs_close
 from vllm.platforms import current_platform
 
@@ -175,23 +175,19 @@ def test_load_tp_4bit_bnb_model(
 )
 @pytest.mark.parametrize("model_name, description", models_4bit_to_test)
 @multi_gpu_test(num_gpus=2)
-def test_load_pp_4bit_bnb_model(model_name, description) -> None:
-    common_args = [
-        "--disable-log-stats",
-        "--dtype",
-        "bfloat16",
-        "--enable-prefix-caching",
-        "--quantization",
-        "bitsandbytes",
-        "--gpu-memory-utilization",
-        "0.7",
-    ]
-    pp_args = [
-        *common_args,
-        "--pipeline-parallel-size",
-        "2",
-    ]
-    compare_two_settings(model_name, common_args, pp_args)
+def test_load_pp_4bit_bnb_model(
+    hf_runner, vllm_runner, example_prompts, model_name, description
+) -> None:
+    hf_model_kwargs = dict(quantization_config=BitsAndBytesConfig(load_in_4bit=True))
+    validate_generated_texts(
+        hf_runner,
+        vllm_runner,
+        example_prompts[:1],
+        model_name,
+        False,
+        hf_model_kwargs,
+        vllm_tp_size=2,
+    )
 
 
 @pytest.mark.skipif(
