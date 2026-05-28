@@ -28,9 +28,6 @@ def test_bitsandbytes_plugin_hooks() -> None:
         enforce_eager=False,
     )
 
-    assert BitsAndBytesConfig.get_inflight_quantization_config() == {}
-    assert BitsAndBytesConfig.get_effective_weight_bytes() == 0.5
-
     BitsAndBytesConfig.verify_model_config(dummy_model_config)
 
     assert dummy_model_config.enforce_eager is True

@@ -130,14 +130,6 @@ class BitsAndBytesConfig(QuantizationConfig):
         return []
 
     @classmethod
-    def get_inflight_quantization_config(cls) -> dict[str, Any] | None:
-        return {}
-
-    @classmethod
-    def get_effective_weight_bytes(cls) -> float | None:
-        return 0.5
-
-    @classmethod
     def from_config(cls, config: dict[str, Any]) -> "BitsAndBytesConfig":
         def get_safe_value(config, keys, default_value=None):
             try:
