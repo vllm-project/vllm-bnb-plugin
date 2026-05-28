@@ -17,10 +17,6 @@ if current_platform.is_rocm():
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize(
     "model, quantization_kwargs",
     [

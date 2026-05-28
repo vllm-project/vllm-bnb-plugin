@@ -108,10 +108,6 @@ def validate_generated_texts(
         )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_4bit_to_test)
 def test_load_4bit_bnb_model(
     hf_runner, vllm_runner, example_prompts, model_name, description
@@ -122,10 +118,6 @@ def test_load_4bit_bnb_model(
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_pre_quant_4bit_to_test)
 def test_load_pre_quant_4bit_bnb_model(
     hf_runner, vllm_runner, example_prompts, model_name, description
@@ -135,10 +127,6 @@ def test_load_pre_quant_4bit_bnb_model(
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_pre_quant_8bit_to_test)
 def test_load_8bit_bnb_model(
     hf_runner, vllm_runner, example_prompts, model_name, description
@@ -148,10 +136,6 @@ def test_load_8bit_bnb_model(
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_4bit_to_test)
 @multi_gpu_test(num_gpus=2)
 def test_load_tp_4bit_bnb_model(
@@ -169,10 +153,6 @@ def test_load_tp_4bit_bnb_model(
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_4bit_to_test)
 @multi_gpu_test(num_gpus=2)
 def test_load_pp_4bit_bnb_model(
@@ -195,10 +175,6 @@ def test_load_pp_4bit_bnb_model(
     reason="Need to add support for quantizing MoE experts with bnb in "
     "transformers v5. See https://github.com/bitsandbytes-foundation/"
     "bitsandbytes/issues/1849",
-)
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
 )
 @pytest.mark.parametrize("model_name, description", models_4bit_to_moe_test)
 def test_4bit_bnb_moe_model(
@@ -235,10 +211,6 @@ def test_4bit_bnb_moe_model(
     )
 
 
-@pytest.mark.skipif(
-    not is_quant_method_supported("bitsandbytes"),
-    reason="bitsandbytes is not supported on this GPU type.",
-)
 @pytest.mark.parametrize("model_name, description", models_4bit_to_embedding_test)
 @pytest.mark.parametrize("dtype", ["half"])
 def test_4bit_bnb_embedding_model(
