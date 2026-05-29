@@ -50,7 +50,7 @@ from vllm.model_executor.utils import (
 from vllm.platforms import current_platform
 from vllm.utils.torch_utils import set_default_torch_dtype
 
-from .bitsandbytes import _get_min_bitsandbytes_version
+from .quantization.utils import _get_min_bitsandbytes_version
 
 logger = init_logger(__name__)
 
@@ -340,10 +340,10 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
         global_tp_size = get_tensor_model_parallel_world_size()
         global_tp_rank = get_tensor_model_parallel_rank()
-        check_match = (
-            lambda weight_name, module_name: weight_name.removesuffix(".weight")
-            == module_name
-        )
+
+        def check_match(weight_name: str, module_name: str) -> bool:
+            return weight_name.removesuffix(".weight") == module_name
+
         for (
             org_weight_name,
             mapped_weight_name,
