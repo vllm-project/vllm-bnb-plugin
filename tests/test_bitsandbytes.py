@@ -7,7 +7,6 @@ from packaging.version import Version
 from transformers import BitsAndBytesConfig
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-from tests.quantization.utils import is_quant_method_supported
 from tests.vllm_test_utils import multi_gpu_test
 from tests.models.utils import check_embeddings_close, check_logprobs_close
 from vllm.platforms import current_platform
