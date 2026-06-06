@@ -330,6 +330,35 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 quant_state = _parse_quant_state(mapped_weight_name, temp_state_dict)
                 quant_state_dict[mapped_weight_name] = quant_state
                 yield org_weight_name, weight_tensor
+            elif (
+                any(
+                    target_module in mapped_weight_name
+                    for target_module in self.target_modules
+                )
+                and mapped_weight_name.endswith(".weight")
+            ):
+                # Target module weight that wasn't pre-quantized
+                # (e.g., skipped in llm_int8_skip_modules).
+                # Quantize on-the-fly.
+                from bitsandbytes.functional import quantize_4bit
+
+                if not weight_tensor.is_cuda:
+                    weight_tensor = weight_tensor.to(
+                        device=current_platform.device_type
+                    )
+                if not weight_tensor.is_contiguous():
+                    weight_tensor = weight_tensor.contiguous()
+
+                with set_default_torch_dtype(torch.float32):
+                    quantized_weight, quant_state = quantize_4bit(
+                        weight_tensor,
+                        compress_statistics=True,
+                        quant_type="nf4",
+                    )
+
+                quantized_weight = quantized_weight.reshape(-1, 1)
+                quant_state_dict[mapped_weight_name] = quant_state
+                yield org_weight_name, quantized_weight
             else:
                 yield org_weight_name, weight_tensor
 
