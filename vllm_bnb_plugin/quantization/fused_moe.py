@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch
-
 from vllm.model_executor.layers.fused_moe import (
     FusedMoEConfig,
     FusedMoEMethodBase,
@@ -78,7 +77,6 @@ class BitsAndBytesMoEMethod(FusedMoEMethodBase):
             w2=w2,
             topk_weights=topk_weights,
             topk_ids=topk_ids,
-            inplace=not self.moe.disable_inplace,
             activation=layer.activation,
             apply_router_weight_on_input=layer.apply_router_weight_on_input,
             global_num_experts=layer.global_num_experts,
@@ -220,7 +218,7 @@ class BitsAndBytesMoEMethod(FusedMoEMethodBase):
                 shard_dim=shard_dim,
                 loaded_weight=loaded_weight,
                 expert_data=expert_data,
-                tp_rank=layer.tp_rank,
+                tp_rank=layer.moe_config.tp_rank,
                 load_full=True,
             )
         else:
