@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import os
-from contextlib import nullcontext
-from typing import Any, TypeVar, cast, TYPE_CHECKING
+from contextlib import nullcontext, suppress
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import pytest
 import torch
@@ -17,12 +17,10 @@ from transformers import (
     BatchFeature,
 )
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
-
 from vllm import LLM, SamplingParams
 from vllm.config.model import ConvertOption, RunnerOption, _get_and_verify_dtype
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
-from vllm.logprobs import Logprob, PromptLogprobs, SampleLogprobs
 from vllm.transformers_utils.utils import maybe_model_redirect
 from vllm.utils.torch_utils import set_default_torch_num_threads
 
@@ -121,9 +119,7 @@ class HfRunner:
             self.config = AutoConfig.from_pretrained(
                 model_name, trust_remote_code=trust_remote_code
             )
-            if self.config.__module__.startswith(
-                "vllm.transformers_utils.configs"
-            ):
+            if self.config.__module__.startswith("vllm.transformers_utils.configs"):
                 from transformers.models.auto.configuration_auto import (
                     CONFIG_MAPPING,
                 )
@@ -136,9 +132,7 @@ class HfRunner:
             from vllm.platforms import current_platform
 
             self.device = (
-                "cpu"
-                if current_platform.is_cpu()
-                else current_platform.device_type
+                "cpu" if current_platform.is_cpu() else current_platform.device_type
             )
             self.dtype = dtype = _get_and_verify_dtype(
                 model_name,
@@ -183,11 +177,11 @@ class HfRunner:
                 self.model = model
 
             if not skip_tokenizer_init:
-                self.tokenizer: (
-                    "PreTrainedTokenizer | PreTrainedTokenizerFast"
-                ) = AutoTokenizer.from_pretrained(
-                    tokenizer_name or model_name,
-                    trust_remote_code=trust_remote_code,
+                self.tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast = (
+                    AutoTokenizer.from_pretrained(
+                        tokenizer_name or model_name,
+                        trust_remote_code=trust_remote_code,
+                    )
                 )
 
             if processor is not None:
@@ -201,8 +195,7 @@ class HfRunner:
             if skip_tokenizer_init:
                 if self.processor is None:
                     raise ValueError(
-                        "skip_tokenizer_init=True requires "
-                        "processor initialization."
+                        "skip_tokenizer_init=True requires processor initialization."
                     )
                 self.tokenizer = self.processor.tokenizer
 
@@ -210,23 +203,19 @@ class HfRunner:
         self,
         prompts: list[str] | list[list[int]],
     ) -> list[BatchFeature | BatchEncoding | dict[str, torch.Tensor]]:
-        all_inputs: list[
-            BatchFeature | BatchEncoding | dict[str, torch.Tensor]
-        ] = []
+        all_inputs: list[BatchFeature | BatchEncoding | dict[str, torch.Tensor]] = []
         for prompt in prompts:
             if isinstance(prompt, str):
-                inputs = self.processor(
-                    text=prompt, return_tensors="pt"
-                )
+                inputs = self.processor(text=prompt, return_tensors="pt")
                 if isinstance(inputs, BatchFeature):
                     inputs = inputs.to(dtype=self.dtype)
                 all_inputs.append(inputs)
             else:
                 all_inputs.append(
                     {
-                        "input_ids": torch.tensor(
-                            prompt, dtype=torch.long
-                        ).unsqueeze(0),
+                        "input_ids": torch.tensor(prompt, dtype=torch.long).unsqueeze(
+                            0
+                        ),
                     }
                 )
         return all_inputs
@@ -277,8 +266,7 @@ class HfRunner:
                 **kwargs,
             )
             hidden_states = (
-                getattr(output, "hidden_states", None)
-                or output.decoder_hidden_states
+                getattr(output, "hidden_states", None) or output.decoder_hidden_states
             )
             # Compute logprobs from hidden states
             output_embeddings = self.model.get_output_embeddings()
@@ -294,16 +282,12 @@ class HfRunner:
                 )
                 if getattr(output_embeddings, "bias", None) is not None:
                     logits += output_embeddings.bias.unsqueeze(0)
-                tok_logprobs = F.log_softmax(
-                    logits, dim=-1, dtype=torch.float32
-                )
+                tok_logprobs = F.log_softmax(logits, dim=-1, dtype=torch.float32)
                 if tok_idx == 0:
                     tok_logprobs = tok_logprobs[-1, :].reshape(1, -1)
                 topk = tok_logprobs.topk(num_logprobs)
                 tok_logprobs_dct = {}
-                for token_id, logprob in zip(
-                    topk.indices[0], topk.values[0]
-                ):
+                for token_id, logprob in zip(topk.indices[0], topk.values[0]):
                     tok_logprobs_dct[token_id.item()] = logprob.item()
                 seq_logprobs_lst.append(tok_logprobs_dct)
 
@@ -315,14 +299,10 @@ class HfRunner:
             all_output_strs.append(self.tokenizer.decode(output_ids))
         return [
             (ids, s, lp)
-            for ids, s, lp in zip(
-                all_output_ids, all_output_strs, all_logprobs
-            )
+            for ids, s, lp in zip(all_output_ids, all_output_strs, all_logprobs)
         ]
 
-    def encode(
-        self, prompts: list[str], *args, **kwargs
-    ) -> list[list[torch.Tensor]]:
+    def encode(self, prompts: list[str], *args, **kwargs) -> list[list[torch.Tensor]]:
         return self.model.encode(prompts, *args, **kwargs)
 
     def __enter__(self):
@@ -355,9 +335,7 @@ class VllmRunner:
         dtype: str = "auto",
         disable_log_stats: bool = True,
         tensor_parallel_size: int = 1,
-        block_size: int = (
-            16 if not torch.xpu.is_available() else 64
-        ),
+        block_size: int = (16 if not torch.xpu.is_available() else 64),
         enable_chunked_prefill: bool | None = False,
         enforce_eager: bool | None = False,
         default_torch_num_threads: int | None = None,
@@ -368,10 +346,8 @@ class VllmRunner:
             if default_torch_num_threads is None
             else set_default_torch_num_threads(default_torch_num_threads)
         )
-        if not kwargs.get("compilation_config", None):
-            kwargs["compilation_config"] = {
-                "cudagraph_capture_sizes": [4]
-            }
+        if not kwargs.get("compilation_config"):
+            kwargs["compilation_config"] = {"cudagraph_capture_sizes": [4]}
         with init_ctx:
             self.llm = LLM(
                 model=model_name,
@@ -394,10 +370,7 @@ class VllmRunner:
     def _get_inputs(
         self,
         prompts: (
-            list[str]
-            | list[torch.Tensor]
-            | list[list[int]]
-            | list[dict[str, Any]]
+            list[str] | list[torch.Tensor] | list[list[int]] | list[dict[str, Any]]
         ),
     ) -> list[dict[str, Any]]:
         inputs = list[dict[str, Any]]()
@@ -422,18 +395,12 @@ class VllmRunner:
         **kwargs: Any,
     ) -> list[tuple[list[int], str]]:
         inputs = self._get_inputs(prompts)
-        greedy_params = SamplingParams(
-            temperature=0.0, max_tokens=max_tokens
-        )
-        req_outputs = self.llm.generate(
-            inputs, sampling_params=greedy_params, **kwargs
-        )
+        greedy_params = SamplingParams(temperature=0.0, max_tokens=max_tokens)
+        req_outputs = self.llm.generate(inputs, sampling_params=greedy_params, **kwargs)
         outputs: list[tuple[list[int], str]] = []
         for req_output in req_outputs:
             for sample in req_output.outputs:
-                output_ids = list(req_output.prompt_token_ids) + list(
-                    sample.token_ids
-                )
+                output_ids = list(req_output.prompt_token_ids) + list(sample.token_ids)
                 output_str = (req_output.prompt or "") + sample.text
                 outputs.append((output_ids, output_str))
         return outputs
@@ -447,10 +414,7 @@ class VllmRunner:
         stop_token_ids: list[int] | None = None,
         stop: list[str] | None = None,
         **kwargs: Any,
-    ) -> (
-        list[TokensTextLogprobs]
-        | list[TokensTextLogprobsPromptLogprobs]
-    ):
+    ) -> list[TokensTextLogprobs] | list[TokensTextLogprobsPromptLogprobs]:
         inputs = self._get_inputs(prompts)
         greedy_logprobs_params = SamplingParams(
             temperature=0.0,
@@ -493,19 +457,14 @@ class VllmRunner:
     ) -> list[list[float]]:
         inputs = self._get_inputs(prompts)
         req_outputs = self.llm.embed(inputs, *args, **kwargs)
-        return [
-            req_output.outputs.embedding
-            for req_output in req_outputs
-        ]
+        return [req_output.outputs.embedding for req_output in req_outputs]
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        try:
+        with suppress(Exception):
             self.llm.llm_engine.engine_core.shutdown()
-        except Exception:
-            pass
         del self.llm
         cleanup_dist_env_and_memory()
 
@@ -521,6 +480,5 @@ def vllm_runner():
 def pytest_configure(config) -> None:
     config.addinivalue_line(
         "markers",
-        "distributed(num_gpus): mark a test that requires "
-        "multiple GPUs.",
+        "distributed(num_gpus): mark a test that requires multiple GPUs.",
     )

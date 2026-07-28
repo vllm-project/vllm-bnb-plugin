@@ -6,10 +6,10 @@ import pytest
 from packaging.version import Version
 from transformers import BitsAndBytesConfig
 from transformers import __version__ as TRANSFORMERS_VERSION
-
-from tests.vllm_test_utils import multi_gpu_test
-from tests.models.utils import check_embeddings_close, check_logprobs_close
 from vllm.platforms import current_platform
+
+from tests.models.utils import check_embeddings_close, check_logprobs_close
+from tests.vllm_test_utils import multi_gpu_test
 
 if current_platform.is_rocm():
     from vllm.platforms.rocm import on_gfx9

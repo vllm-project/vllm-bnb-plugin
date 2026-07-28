@@ -6,7 +6,6 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
-
 from vllm.logprobs import Logprob, PromptLogprobs, SampleLogprobs
 
 # Type aliases
@@ -88,9 +87,7 @@ def check_logprobs_close(
                     f"\n{name_0}:\tlogprobs\t{prompt_logprobs_0}"
                     f"\n{name_1}:\tlogprobs\t{prompt_logprobs_1}"
                 )
-                assert (
-                    prompt_logprobs_0 is None and prompt_logprobs_1 is None
-                ), fail_msg
+                assert prompt_logprobs_0 is None and prompt_logprobs_1 is None, fail_msg
         else:
             raise ValueError(
                 f"Outputs tuple must have 3 or 4 elements but "

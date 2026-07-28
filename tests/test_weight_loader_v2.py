@@ -1,15 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import torch
 import pytest
-
+import torch
+from vllm.model_executor import parameter as parameter_module
 from vllm.model_executor.layers.linear import (
     MergedColumnParallelLinear,
     QKVParallelLinear,
     RowParallelLinear,
 )
-from vllm.model_executor import parameter as parameter_module
 
 from vllm_bnb_plugin.bitsandbytes import (
     BitsAndBytes4bitParameter,
@@ -21,7 +20,9 @@ from vllm_bnb_plugin.bitsandbytes import (
 @pytest.fixture(autouse=True)
 def _mock_single_rank_tp(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(parameter_module, "get_tensor_model_parallel_rank", lambda: 0)
-    monkeypatch.setattr(parameter_module, "get_tensor_model_parallel_world_size", lambda: 1)
+    monkeypatch.setattr(
+        parameter_module, "get_tensor_model_parallel_world_size", lambda: 1
+    )
 
 
 def _assert_uses_weight_loader_v2(weight, layer) -> None:
