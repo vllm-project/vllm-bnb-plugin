@@ -3,10 +3,9 @@
 """Transformers backend tests for bitsandbytes plugin models."""
 
 import pytest
+from vllm.platforms import current_platform
 
 from tests.models.utils import check_logprobs_close
-from tests.quantization.utils import is_quant_method_supported
-from vllm.platforms import current_platform
 
 if current_platform.is_rocm():
     from vllm.platforms.rocm import on_gfx9

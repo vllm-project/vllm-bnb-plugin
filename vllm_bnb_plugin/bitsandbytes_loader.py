@@ -14,7 +14,6 @@ from huggingface_hub import HfApi
 from packaging import version
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
-
 from vllm.config import ModelConfig
 from vllm.config.load import LoadConfig
 from vllm.distributed import (
@@ -330,13 +329,10 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 quant_state = _parse_quant_state(mapped_weight_name, temp_state_dict)
                 quant_state_dict[mapped_weight_name] = quant_state
                 yield org_weight_name, weight_tensor
-            elif (
-                any(
-                    target_module in mapped_weight_name
-                    for target_module in self.target_modules
-                )
-                and mapped_weight_name.endswith(".weight")
-            ):
+            elif any(
+                target_module in mapped_weight_name
+                for target_module in self.target_modules
+            ) and mapped_weight_name.endswith(".weight"):
                 # Target module weight that wasn't pre-quantized
                 # (e.g., skipped in llm_int8_skip_modules).
                 # Quantize on-the-fly.

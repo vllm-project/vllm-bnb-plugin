@@ -4,7 +4,6 @@
 from typing import Any
 
 import torch
-
 from vllm.model_executor.layers.fused_moe import RoutedExperts
 from vllm.model_executor.layers.linear import (
     LinearBase,

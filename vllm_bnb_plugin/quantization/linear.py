@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch
-
 from vllm.model_executor.layers.linear import (
     LinearMethodBase,
     register_weight_loader_v2_supported_method,
