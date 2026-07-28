@@ -15,7 +15,7 @@ from vllm.model_executor.layers.quantization import (
     QuantizationMethods,
 )
 
-from .utils import is_layer_skipped_bnb, logger
+from .utils import is_layer_skipped_bnb
 
 
 class BitsAndBytesConfig(QuantizationConfig):
@@ -128,23 +128,6 @@ class BitsAndBytesConfig(QuantizationConfig):
             llm_int8_skip_modules=llm_int8_skip_modules,
             llm_int8_threshold=llm_int8_threshold,
         )
-
-    @classmethod
-    def verify_model_config(cls, model_config: Any) -> None:
-        quant_config = model_config.model_arch_config.quantization_config
-        if (
-            quant_config is not None
-            and quant_config.get("load_in_8bit", False)
-            and not model_config.enforce_eager
-        ):
-            logger.warning(
-                "CUDA graph is not supported on BitsAndBytes 8bit yet, "
-                "fallback to the eager mode."
-            )
-            model_config.enforce_eager = True
-
-    def supports_unaligned_mlp(self) -> bool:
-        return True
 
     def get_quant_method(
         self,
