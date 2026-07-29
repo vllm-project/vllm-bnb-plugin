@@ -6,11 +6,10 @@ import itertools
 import math
 import os
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
-from huggingface_hub import HfApi
 from packaging import version
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
@@ -22,7 +21,7 @@ from vllm.distributed import (
 )
 from vllm.logger import init_logger
 from vllm.lora.utils import is_moe_model
-from vllm.model_executor.layers.fused_moe import FusedMoE
+from vllm.model_executor.layers.fused_moe import RoutedExperts
 from vllm.model_executor.layers.linear import (
     LinearBase,
     MergedColumnParallelLinear,
@@ -47,6 +46,7 @@ from vllm.model_executor.utils import (
     set_weight_attrs,
 )
 from vllm.platforms import current_platform
+from vllm.transformers_utils.repo_utils import hf_api
 from vllm.utils.torch_utils import set_default_torch_dtype
 
 from .quantization.utils import _get_min_bitsandbytes_version
@@ -57,7 +57,7 @@ logger = init_logger(__name__)
 class BitsAndBytesModelLoader(BaseModelLoader):
     """Model loader to load model weights with BitsAndBytes quantization."""
 
-    possible_config_file_names = ["adapter_config.json"]
+    possible_config_file_names: ClassVar[list[str]] = ["adapter_config.json"]
 
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
@@ -98,8 +98,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 if weight_files:
                     return model_name_or_path, weight_files, pattern
         else:
-            hf_api = HfApi()
-            repo_files = hf_api.list_repo_files(repo_id=model_name_or_path)
+            repo_files = hf_api().list_repo_files(repo_id=model_name_or_path)
             for pattern in allowed_patterns:
                 matching_files = fnmatch.filter(repo_files, pattern)
                 if matching_files:
@@ -142,8 +141,8 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 download_safetensors_index_file_from_hf(
                     model_name_or_path,
                     index_file,
-                    self.load_config.download_dir,
-                    revision,
+                    cache_dir=self.load_config.download_dir,
+                    revision=revision,
                 )
             hf_weights_files = filter_duplicate_safetensors_files(
                 hf_weights_files, hf_folder, index_file
@@ -303,9 +302,9 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         # Closure to parse quant_state for each prequant weight
         def _parse_quant_state(param_name: str, temp_state_dict: dict) -> QuantState:
             quant_state = {}
-            for k in temp_state_dict:
+            for k, value in temp_state_dict.items():
                 if param_name + "." in k:
-                    quant_state[k] = temp_state_dict[k]
+                    quant_state[k] = value
 
             return QuantState.from_dict(
                 quant_state, device=current_platform.device_type
@@ -415,7 +414,9 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                     total_shard_sizes = next(
                         (
                             sizes
-                            for module, sizes in self.maybe_fused_weights_modules.items()  # noqa: E501
+                            for module, sizes in (
+                                self.maybe_fused_weights_modules.items()
+                            )
                             if check_match(mapped_weight_name, module)
                         )
                     )
@@ -493,13 +494,13 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 self.target_modules.append(name)
                 if module.disable_tp:
                     self.tp_disabled_modules.append(name)
-            elif isinstance(module, FusedMoE) and hasattr(
+            elif isinstance(module, RoutedExperts) and hasattr(
                 module.quant_method, "quant_config"
             ):
-                # TODO: support FusedMoE with prequant and 8bit.
+                # TODO: support RoutedExperts with prequant and 8bit.
                 if self.pre_quant and self.load_8bit:
                     raise ValueError(
-                        "Prequant BitsAndBytes 8bit models with FusedMoE "
+                        "Prequant BitsAndBytes 8bit models with RoutedExperts "
                         "is not supported yet."
                     )
                 # Get the corresponding weight name using module name and
@@ -537,7 +538,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
             # dimension (dim=-1)
             elif isinstance(module, (RowParallelLinear,)):
                 self.column_sharded_weights_modules.append(name)
-            elif isinstance(module, FusedMoE):
+            elif isinstance(module, RoutedExperts):
                 expert_mapping = self.expert_params_mapping
                 for exp in expert_mapping:
                     if exp[-1] == "w2":
@@ -596,16 +597,11 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
         if is_moe_model(model):
             self.expert_params_mapping = get_moe_expert_mapping(model)
-            if not self.expert_params_mapping:
-                raise AttributeError(
-                    f"MoE Model {type(model).__name__} does not support "
-                    "BitsAndBytes quantization yet. Ensure this model has "
-                    "'get_expert_mapping' method."
-                )
         # For some models like Molmo, we need to use hf_to_vllm_mapper
         # to ensure correct loading of weights.
         if hf_to_vllm_mapper := getattr(model, "hf_to_vllm_mapper", None):
-            self.weight_mapper = lambda name: hf_to_vllm_mapper._map_name(name)
+            unstacked_mapper = hf_to_vllm_mapper.get_unstacked_mapper()
+            self.weight_mapper = lambda name, m=unstacked_mapper: m._map_name(name)
 
         self._get_bnb_target_modules(model)
         self._classify_module_sharding(model)
@@ -653,12 +649,12 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         from bitsandbytes.functional import QuantState
 
         if not self.expert_params_mapping:
-            return dict()
+            return {}
 
         expert_mapping = self.expert_params_mapping
         expert_qs_dict = {}
         for name, module in model.named_modules():
-            if not isinstance(module, FusedMoE):
+            if not isinstance(module, RoutedExperts):
                 continue
             w1_states_lst = []
             w2_states_lst = []

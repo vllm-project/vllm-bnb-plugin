@@ -1,15 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from typing import Any
+
 from vllm.model_executor.layers.quantization import register_quantization_config
 from vllm.model_executor.model_loader import register_model_loader
+
+from .quantization.utils import logger
 
 _REGISTERED = False
 
 
+def _enforce_eager_for_8bit(model_config: Any) -> None:
+    quant_config = model_config.model_arch_config.quantization_config
+    if (
+        quant_config is not None
+        and quant_config.get("load_in_8bit", False)
+        and not model_config.enforce_eager
+    ):
+        logger.warning(
+            "CUDA graph is not supported on BitsAndBytes 8bit yet, "
+            "fallback to the eager mode."
+        )
+        model_config.enforce_eager = True
+
+
 def _patch_engine_args() -> None:
-    """Patch EngineArgs to set load_format='bitsandbytes' when BNB
-    quantization is used, matching upstream vLLM behavior.
+    """Patch EngineArgs for BitsAndBytes-specific configuration.
 
     Handles two cases:
     1. Inflight quantization: user explicitly sets quantization='bitsandbytes'
@@ -17,7 +34,14 @@ def _patch_engine_args() -> None:
     """
     from vllm.engine.arg_utils import EngineArgs
 
+    _orig_create_model_config = EngineArgs.create_model_config
     _orig_create_engine_config = EngineArgs.create_engine_config
+
+    def _patched_create_model_config(self, *args, **kwargs):
+        result = _orig_create_model_config(self, *args, **kwargs)
+        if result.quantization == "bitsandbytes":
+            _enforce_eager_for_8bit(result)
+        return result
 
     def _patched_create_engine_config(self, *args, **kwargs):
         result = _orig_create_engine_config(self, *args, **kwargs)
@@ -28,6 +52,7 @@ def _patch_engine_args() -> None:
             result.load_config.load_format = "bitsandbytes"
         return result
 
+    EngineArgs.create_model_config = _patched_create_model_config  # type: ignore[assignment]
     EngineArgs.create_engine_config = _patched_create_engine_config  # type: ignore[assignment]
 
 
