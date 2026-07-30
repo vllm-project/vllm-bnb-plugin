@@ -26,24 +26,33 @@ jobs:
       - name: Install build tools
         run: python -m pip install --upgrade build twine
 
-      - name: Validate release tag
+      - name: Validate release tag references package version
         if: github.event_name == 'release'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          python - <<"PY"
+          python - <<'PY'
           import os
+          import pathlib
+          import re
           import tomllib
 
-          with open("pyproject.toml", "rb") as file:
-              project = tomllib.load(file)
-
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
           version = project["project"]["version"]
           release_tag = os.environ["RELEASE_TAG"]
-          if release_tag != f"v{version}":
+          version_tokens = {
+              token
+              for token in re.split(r"[-+_/]", release_tag)
+              if token
+          }
+
+          if version not in version_tokens and f"v{version}" not in version_tokens:
               raise SystemExit(
-                  f"Release tag {release_tag!r} does not match version {version!r}."
+                  f"Release tag {release_tag!r} does not reference pyproject "
+                  f"version {version!r}."
               )
+
+          print(f"Building distributions for version {version}")
           PY
 
       - name: Build and check distributions
