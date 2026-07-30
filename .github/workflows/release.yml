@@ -125,7 +125,6 @@ jobs:
           path: dist/
 
       - name: Upload distributions
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" dist/*
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
