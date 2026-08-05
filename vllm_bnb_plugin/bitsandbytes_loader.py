@@ -49,7 +49,7 @@ from vllm.platforms import current_platform
 from vllm.transformers_utils.repo_utils import hf_api
 from vllm.utils.torch_utils import set_default_torch_dtype
 
-from .quantization.utils import _get_min_bitsandbytes_version
+from .quantization.utils import _get_min_bitsandbytes_version, bnb_quantize_stream
 
 logger = init_logger(__name__)
 
@@ -344,7 +344,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 if not weight_tensor.is_contiguous():
                     weight_tensor = weight_tensor.contiguous()
 
-                with set_default_torch_dtype(torch.float32):
+                with set_default_torch_dtype(torch.float32), bnb_quantize_stream():
                     quantized_weight, quant_state = quantize_4bit(
                         weight_tensor,
                         compress_statistics=True,
@@ -459,7 +459,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 if loaded_weight.is_contiguous() is False:
                     loaded_weight = loaded_weight.contiguous()
 
-                with set_default_torch_dtype(torch.float32):
+                with set_default_torch_dtype(torch.float32), bnb_quantize_stream():
                     processed_weight, quant_state = quantize_4bit(
                         loaded_weight,
                         compress_statistics=True,
