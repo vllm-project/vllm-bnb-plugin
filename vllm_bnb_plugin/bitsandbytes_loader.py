@@ -6,6 +6,7 @@ import itertools
 import math
 import os
 from collections.abc import Callable, Generator
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 import numpy as np
@@ -30,7 +31,6 @@ from vllm.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from vllm.model_executor.model_loader.base_loader import BaseModelLoader
-from vllm.model_executor.model_loader.utils import ParamMapping
 from vllm.model_executor.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf,
     download_weights_from_hf,
@@ -52,6 +52,28 @@ from vllm.utils.torch_utils import set_default_torch_dtype
 from .quantization.utils import _get_min_bitsandbytes_version, bnb_quantize_stream
 
 logger = init_logger(__name__)
+
+
+@dataclass
+class ParamMapping:
+    """Map packed model parameters to their constituent parameters."""
+
+    packed_mapping: dict[str, list[str]]
+    inverse_packed_mapping: dict[str, tuple[str, int]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for packed_name, sub_params in self.packed_mapping.items():
+            # Skip self-contained cases (e.g., {"W_pack": ["W_pack"]}).
+            if len(sub_params) == 1 and sub_params[0] == packed_name:
+                continue
+            for index, param_name in enumerate(sub_params):
+                self.inverse_packed_mapping[param_name] = (packed_name, index)
+
+    def get_sub_modules(self, module_name: str) -> tuple[str, list[str]] | None:
+        for packed_name, sub_params in self.packed_mapping.items():
+            if module_name.endswith(packed_name):
+                return packed_name, sub_params
+        return None
 
 
 class BitsAndBytesModelLoader(BaseModelLoader):
